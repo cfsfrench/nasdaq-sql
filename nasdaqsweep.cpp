@@ -2,11 +2,15 @@
 #include "gFi.cpp"
 #include <iostream>
 
+//Nasdaq cycler is made a class so it can be created and accessed by other objects 
+//Contructor contains the network manager and interval that it updates
 NASDAQSweep::NASDAQSweep(QNetworkAccessManager* mgr, int Interv,QWidget *parent)
     : QWidget{parent}
 {
+    //Label for loggin to UI
     logLab = new QLabel(this);
     nMgr = mgr;
+    //Creating timer and connecting its timeout to the first step in the cycle
     nasdaqTimer = new QTimer;
     nasdaqTimer->setInterval(Interv);
     connect(nasdaqTimer, &QTimer::timeout, this, &NASDAQSweep::step1);
@@ -15,6 +19,7 @@ NASDAQSweep::NASDAQSweep(QNetworkAccessManager* mgr, int Interv,QWidget *parent)
 
 void NASDAQSweep::step1()
 {
+    //This step gets all Nasdaq quotes and sends reply to step2
     QString url = "https://financialmodelingprep.com/api/v3/quotes/nasdaq?apikey=xxxx";
     QNetworkReply *nReply = nMgr->get(QNetworkRequest(QUrl(url)));
     connect(nReply, &QNetworkReply::finished, this, &NASDAQSweep::step2);
@@ -23,12 +28,16 @@ void NASDAQSweep::step1()
 
 void NASDAQSweep::step2()
 {
+    // Here we get a pointer to the reply that called the function
     QNetworkReply *nReply = qobject_cast<QNetworkReply*>(sender());
+    
+    // We now turn it into a QByteArray to read the Json, checking for null ptr and if the Byte Array is empty in the case of an API error. We return if this is the case.
     QByteArray val = gFi::initJsonReply(nReply);
     if(val.isEmpty()){
         return;
     }
-
+    
+    // We now prepare our insert with all values going into the table, preventing SQL injection.
     QJsonArray arr = QJsonDocument::fromJson(val).array();
     QSqlQuery q;
     q.prepare("INSERT INTO fmp_nasdaq_quotes  VALUES (:ticker, 	:name, :price, :changePercent, :change, :dayLow, :dayHigh, :yearHigh, :yearLow, :marketCap, :priceAvg50, :priceAvg200	, :volume	, :avgVolume	, :exchange	, :open	, :previousClose	, :eps	, :pe	, :earningsDate	, :sharesOutstanding	, :timestamp )");
@@ -54,6 +63,8 @@ void NASDAQSweep::step2()
     QVariantList earningsDate;
     QVariantList sharesOutstanding;
     QVariantList timestamp;
+    
+    // Each json object in the array contains the values we need so we append the QVariantLists which we will use to bind the values to the prepared statement.
     for(auto m: arr){
         QJsonObject obj = m.toObject();
         ticker.append(obj["symbol"].toString());
@@ -103,16 +114,18 @@ void NASDAQSweep::step2()
     q.addBindValue(previousClose);
     q.addBindValue(eps);
     q.addBindValue(pe);
-    q.addBindValue(earningsDate);
-
+    q.addBindValue(earningsDate);=
     q.addBindValue(sharesOutstanding);
     q.addBindValue(timestamp);
+    
+    //Show error if execution fails
     if(!q.execBatch()){
         logLab->setText(q.lastError().text());
         std::cout<<q.lastError().text().toStdString()<<std::endl;
     }
 
-
+    //We now search for new tickers that might have been added to the Nasdaq in this cycle
+    //If there are new tickers we need to add them to our ticker list
     QVariantList missingTicks;
     QVariantList missingNames;
     QVariantList now;
@@ -143,9 +156,9 @@ void NASDAQSweep::step2()
     }
 
 }
+    // We have new tickers
     if(missingTicks.size() > 1){
-        std::cout<<"newies"<<std::endl;
-
+        std::cout<<"new tickers"<<std::endl;
             QSqlQuery qN;
             qN.prepare("INSERT INTO porfolio_table VALUES (:updated, :ticker, :name, :exchange) ");
             qN.addBindValue(now);
@@ -159,7 +172,7 @@ void NASDAQSweep::step2()
 
         }
 
-
+    // Update the table
     for(int i=0; i<ticker.size(); i++){
     q.prepare(""
               "UPDATE portfolio_table SET updated = ?,  price = ?, change = ?, changePercent = ?, volume = ?, dayLow = ?, dayHigh = ?, open = ?, previousClose = ?, pe = ?, eps = ? WHERE ticker = '" + ticker[i].toString() + "'"
