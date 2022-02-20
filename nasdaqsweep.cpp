@@ -7,7 +7,7 @@
 NASDAQSweep::NASDAQSweep(QNetworkAccessManager* mgr, int Interv,QWidget *parent)
     : QWidget{parent}
 {
-    //Label for loggin to UI
+    //Label for logging to UI
     logLab = new QLabel(this);
     nMgr = mgr;
     //Creating timer and connecting its timeout to the first step in the cycle
